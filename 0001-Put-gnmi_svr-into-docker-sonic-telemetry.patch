@@ -1,0 +1,141 @@
+From ad78a2ac1bd1ab379cf2a1635f38e101457a18e0 Mon Sep 17 00:00:00 2001
+From: squid_ro <squid_ro@edge-core.com>
+Date: Fri, 20 Jul 2018 11:11:53 +0800
+Subject: [PATCH 1/4] Put gnmi_svr into docker-sonic-telemetry.
+
+---
+ dockers/docker-sonic-telemetry/Dockerfile.j2    | 20 +++++++++++++++++++-
+ dockers/docker-sonic-telemetry/gnmi_svr.sh      |  4 ++++
+ dockers/docker-sonic-telemetry/start.sh         |  5 +++--
+ dockers/docker-sonic-telemetry/supervisord.conf | 12 ++++++++++--
+ rules/config                                    |  4 ++--
+ rules/docker-telemetry.mk                       |  2 +-
+ rules/gnmi-svr.mk                               |  6 ++++++
+ 7 files changed, 45 insertions(+), 8 deletions(-)
+ create mode 100755 dockers/docker-sonic-telemetry/gnmi_svr.sh
+ create mode 100644 rules/gnmi-svr.mk
+
+diff --git a/dockers/docker-sonic-telemetry/Dockerfile.j2 b/dockers/docker-sonic-telemetry/Dockerfile.j2
+index bbb15db..f14dadb 100644
+--- a/dockers/docker-sonic-telemetry/Dockerfile.j2
++++ b/dockers/docker-sonic-telemetry/Dockerfile.j2
+@@ -22,7 +22,25 @@ RUN dpkg -i \
+ debs/{{ deb }}{{' '}}
+ {%- endfor %}
+ 
+-COPY ["start.sh", "telemetry.sh", "dialout.sh", "/usr/bin/"]
++
++# install grpcio
++RUN pip install protobuf
++RUN pip install grpcio
++
++{% if docker_sonic_telemetry_whls.strip() -%}
++# Copy locally-built Python wheel dependencies
++{%- for whl in docker_sonic_telemetry_whls.split(' ') %}
++COPY python-wheels/{{ whl }} /python-wheels/
++{%- endfor %}
++
++# Install locally-built Python wheel dependencies
++{%- for whl in docker_sonic_telemetry_whls.split(' ') %}
++RUN pip install /python-wheels/{{ whl }}
++{%- endfor %}
++{% endif %}
++
++
++COPY ["start.sh", "telemetry.sh", "dialout.sh", "gnmi_svr.sh", "/usr/bin/"]
+ COPY ["supervisord.conf", "/etc/supervisor/conf.d/"]
+ 
+ RUN apt-get clean -y; apt-get autoclean -y; apt-get autoremove -y
+diff --git a/dockers/docker-sonic-telemetry/gnmi_svr.sh b/dockers/docker-sonic-telemetry/gnmi_svr.sh
+new file mode 100755
+index 0000000..224c509
+--- /dev/null
++++ b/dockers/docker-sonic-telemetry/gnmi_svr.sh
+@@ -0,0 +1,4 @@
++#!/usr/bin/env bash
++
++exec gnmi_server localhost:5001 
++
+diff --git a/dockers/docker-sonic-telemetry/start.sh b/dockers/docker-sonic-telemetry/start.sh
+index b307e38..fb00dd4 100755
+--- a/dockers/docker-sonic-telemetry/start.sh
++++ b/dockers/docker-sonic-telemetry/start.sh
+@@ -7,5 +7,6 @@ rm -f /var/run/rsyslogd.pid
+ 
+ supervisorctl start rsyslogd
+ 
+-supervisorctl start telemetry
+-supervisorctl start dialout
++#supervisorctl start telemetry
++#supervisorctl start dialout
++supervisorctl start gnmi_svr
+diff --git a/dockers/docker-sonic-telemetry/supervisord.conf b/dockers/docker-sonic-telemetry/supervisord.conf
+index dcd8a9e..60c4dd0 100644
+--- a/dockers/docker-sonic-telemetry/supervisord.conf
++++ b/dockers/docker-sonic-telemetry/supervisord.conf
+@@ -19,8 +19,16 @@ autorestart=false
+ stdout_logfile=syslog
+ stderr_logfile=syslog
+ 
+-[program:telemetry]
+-command=/usr/bin/telemetry.sh
++;[program:telemetry]
++;command=/usr/bin/telemetry.sh
++;priority=3
++;autostart=false
++;autorestart=true
++;stdout_logfile=syslog
++;stderr_logfile=syslog
++
++[program:gnmi_svr]
++command=/usr/bin/gnmi_svr.sh
+ priority=3
+ autostart=false
+ autorestart=true
+diff --git a/rules/config b/rules/config
+index 86d1066..3e2e347 100644
+--- a/rules/config
++++ b/rules/config
+@@ -24,7 +24,7 @@ SONIC_CONFIG_MAKE_JOBS = $(shell nproc)
+ DEFAULT_USERNAME = admin
+ 
+ # DEFAULT_PASSWORD - default password for installer build
+-DEFAULT_PASSWORD = YourPaSsWoRd
++DEFAULT_PASSWORD = accton123 
+ 
+ # ENABLE_DHCP_GRAPH_SERVICE - specify the source of minigraph to generate configuration file.
+ # If set to y SONiC will get the minigraph from graph service. Graph service URL need to be
+@@ -57,4 +57,4 @@ SONIC_ROUTING_STACK = quagga
+ ENABLE_ORGANIZATION_EXTENSIONS = y
+ 
+ # ENABLE_SYSTEM_TELEMETRY - build docker-sonic-telemetry for system telemetry support
+-# ENABLE_SYSTEM_TELEMETRY = y
++ENABLE_SYSTEM_TELEMETRY = y
+diff --git a/rules/docker-telemetry.mk b/rules/docker-telemetry.mk
+index fca3b8a..f1c6bc3 100644
+--- a/rules/docker-telemetry.mk
++++ b/rules/docker-telemetry.mk
+@@ -8,7 +8,7 @@ SONIC_DOCKER_IMAGES += $(DOCKER_TELEMETRY)
+ ifeq ($(ENABLE_SYSTEM_TELEMETRY), y)
+ SONIC_INSTALL_DOCKER_IMAGES += $(DOCKER_TELEMETRY)
+ endif
+-
++$(DOCKER_TELEMETRY)_PYTHON_WHEELS += $(GNMISVR_PY2)
+ $(DOCKER_TELEMETRY)_CONTAINER_NAME = telemetry
+ $(DOCKER_TELEMETRY)_RUN_OPT += --net=host --privileged -t
+ $(DOCKER_TELEMETRY)_RUN_OPT += -v /etc/sonic:/etc/sonic:ro
+diff --git a/rules/gnmi-svr.mk b/rules/gnmi-svr.mk
+new file mode 100644
+index 0000000..d75e4e4
+--- /dev/null
++++ b/rules/gnmi-svr.mk
+@@ -0,0 +1,6 @@
++# gnmi-svr python2 wheel
++
++GNMISVR_PY2 = gnmi_svr-0.1-py2-none-any.whl
++$(GNMISVR_PY2)_SRC_PATH = $(SRC_PATH)/gnmi-svr
++$(GNMISVR_PY2)_PYTHON_VERSION = 2
++SONIC_PYTHON_WHEELS += $(GNMISVR_PY2)
+-- 
+2.7.4
+

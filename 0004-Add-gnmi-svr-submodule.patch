@@ -1,0 +1,68 @@
+From 9b9bbd9ab2c7a288abef7d019fbf30aaf938badf Mon Sep 17 00:00:00 2001
+From: squid_ro <squid_ro@edge-core.com>
+Date: Fri, 20 Jul 2018 13:46:27 +0800
+Subject: [PATCH 4/4] Add gnmi-svr submodule.
+
+---
+ .gitmodules                 |  3 +++
+ src/gnmi-svr/my_gnmi_server |  1 +
+ src/gnmi-svr/setup.py       | 28 ++++++++++++++++++++++++++++
+ 3 files changed, 32 insertions(+)
+ create mode 160000 src/gnmi-svr/my_gnmi_server
+ create mode 100644 src/gnmi-svr/setup.py
+
+diff --git a/.gitmodules b/.gitmodules
+index e0cfc08..617b71c 100755
+--- a/.gitmodules
++++ b/.gitmodules
+@@ -77,3 +77,6 @@
+ [submodule "platform/broadcom/sonic-platform-modules-mitac"]
+ 	path = platform/broadcom/sonic-platform-modules-mitac
+ 	url = https://github.com/MiTAC-EBU/sonic-platform-modules-mitac.git
++[submodule "src/gnmi-svr/my_gnmi_server"]
++	path = src/gnmi-svr/my_gnmi_server
++	url = https://github.com/SquidRo/my_gnmi_server
+diff --git a/src/gnmi-svr/my_gnmi_server b/src/gnmi-svr/my_gnmi_server
+new file mode 160000
+index 0000000..eebaa1c
+--- /dev/null
++++ b/src/gnmi-svr/my_gnmi_server
+@@ -0,0 +1 @@
++Subproject commit eebaa1c64dd546e73e50c6e0b248666c563f28aa
+diff --git a/src/gnmi-svr/setup.py b/src/gnmi-svr/setup.py
+new file mode 100644
+index 0000000..dc9aa5d
+--- /dev/null
++++ b/src/gnmi-svr/setup.py
+@@ -0,0 +1,28 @@
++from setuptools import setup, find_packages
++
++dependencies = [
++    'pyangbind',
++]
++
++setup(
++    name='gnmi-svr',
++    install_requires=dependencies,
++    version='0.1',
++    packages=find_packages(),
++    license='Apache 2.0',
++    author='',
++    author_email='',
++    entry_points={
++        'console_scripts': [
++            'gnmi_server = my_gnmi_server.gnmi_server:main'
++        ]
++    },
++    maintainer='',
++    maintainer_email='',
++    classifiers=[
++        'Intended Audience :: Developers',
++        'Operating System :: Linux',
++        'Programming Language :: Python',
++    ],
++
++)
+-- 
+2.7.4
+

@@ -1,0 +1,22 @@
+From 961aa9f01c209a973f5fa48c0243944e2e181cac Mon Sep 17 00:00:00 2001
+From: squid_ro <squid_ro@edge-core.com>
+Date: Fri, 20 Jul 2018 11:16:08 +0800
+Subject: [PATCH 2/4] Add debug print-*.
+
+---
+ Makefile | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/Makefile b/Makefile
+index 6471f7f..5e3d10f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -123,3 +123,5 @@ reset :
+ 	 else \
+ 	     echo "Reset aborted"; \
+ 	 fi
++
++print-%  : ; @echo $* = $($*)
+-- 
+2.7.4
+

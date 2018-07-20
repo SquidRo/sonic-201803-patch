@@ -1,0 +1,109 @@
+From 3b5fdb7960d70d617279818c03173f8f36ac9c4c Mon Sep 17 00:00:00 2001
+From: squid_ro <squid_ro@edge-core.com>
+Date: Fri, 20 Jul 2018 11:26:39 +0800
+Subject: [PATCH 3/4] Put gnmi_svr into sonic rootfs.
+
+---
+ build_debian.sh                                 | 11 +++++++++++
+ files/build_templates/sonic_debian_extension.j2 | 16 ++++++++++++++++
+ slave.mk                                        |  7 ++++++-
+ 3 files changed, 33 insertions(+), 1 deletion(-)
+
+diff --git a/build_debian.sh b/build_debian.sh
+index b1026c7..e2d28fb 100755
+--- a/build_debian.sh
++++ b/build_debian.sh
+@@ -61,6 +61,15 @@ DEFAULT_USERINFO="Default admin user,,,"
+ if [[ -d $FILESYSTEM_ROOT ]]; then
+     sudo rm -rf $FILESYSTEM_ROOT || die "Failed to clean chroot directory"
+ fi
++
++if [[ -d ${FILESYSTEM_ROOT}_no_dimg ]]; then #squid
++    sudo cp -rf ${FILESYSTEM_ROOT}_no_dimg ${FILESYSTEM_ROOT}
++
++    trap_push 'sudo umount $FILESYSTEM_ROOT/proc || true'
++    sudo LANG=C chroot $FILESYSTEM_ROOT mount proc /proc -t proc
++
++else #squid
++
+ mkdir -p $FILESYSTEM_ROOT
+ mkdir -p $FILESYSTEM_ROOT/$PLATFORM_DIR
+ mkdir -p $FILESYSTEM_ROOT/$PLATFORM_DIR/x86_64-grub
+@@ -343,6 +352,8 @@ build_number: ${BUILD_NUMBER:-0}
+ built_by: $USER@$BUILD_HOSTNAME
+ EOF
+ 
++fi #squid
++
+ if [ -f sonic_debian_extension.sh ]; then
+     ./sonic_debian_extension.sh $FILESYSTEM_ROOT $PLATFORM_DIR
+ fi
+diff --git a/files/build_templates/sonic_debian_extension.j2 b/files/build_templates/sonic_debian_extension.j2
+index 4898bdb..950ef9c 100644
+--- a/files/build_templates/sonic_debian_extension.j2
++++ b/files/build_templates/sonic_debian_extension.j2
+@@ -109,6 +109,19 @@ sudo dpkg --root=$FILESYSTEM_ROOT -i target/debs/libnss-tacplus_*.deb
+ sudo LANG=C chroot $FILESYSTEM_ROOT pam-auth-update --remove tacplus
+ sudo sed -i -e '/^passwd/s/ tacplus//' $FILESYSTEM_ROOT/etc/nsswitch.conf
+ 
++# squid for gnmi_server
++sudo https_proxy=$https_proxy LANG=C chroot $FILESYSTEM_ROOT pip install protobuf
++sudo https_proxy=$https_proxy LANG=C chroot $FILESYSTEM_ROOT pip install grpcio
++
++GNMISVR_PY2_WHEEL_NAME=$(basename {{gnmisvr_py2_wheel_path}})
++sudo cp {{gnmisvr_py2_wheel_path}} $FILESYSTEM_ROOT/$GNMISVR_PY2_WHEEL_NAME
++sudo https_proxy=$https_proxy LANG=C chroot $FILESYSTEM_ROOT pip install $GNMISVR_PY2_WHEEL_NAME
++sudo rm -rf $FILESYSTEM_ROOT/$GNMISVR_PY2_WHEEL_NAME
++
++sudo cp $IMAGE_CONFIGS/gnmi_svr/gnmi_svr.service $FILESYSTEM_ROOT/etc/systemd/system/
++sudo LANG=C chroot $FILESYSTEM_ROOT systemctl enable gnmi_svr.service
++
++
+ # Copy crontabs
+ sudo cp -f $IMAGE_CONFIGS/cron.d/* $FILESYSTEM_ROOT/etc/cron.d/
+ 
+@@ -240,6 +253,9 @@ fi
+ sudo cp $IMAGE_CONFIGS/ssh/sshd-config-updater.service $FILESYSTEM_ROOT/etc/systemd/system
+ sudo mkdir -p $FILESYSTEM_ROOT/etc/systemd/system/multi-user.target.wants
+ cd $FILESYSTEM_ROOT/etc/systemd/system/multi-user.target.wants/
++if [ -f sshd-config-updater.service ]; then
++    sudo rm sshd-config-updater.service
++fi
+ sudo ln -s ../sshd-config-updater.service sshd-config-updater.service
+ cd -
+ sudo cp $IMAGE_CONFIGS/ssh/sshd-config-updater $FILESYSTEM_ROOT/usr/bin/
+diff --git a/slave.mk b/slave.mk
+index 7430f3a..52118db 100644
+--- a/slave.mk
++++ b/slave.mk
+@@ -433,7 +433,8 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_INSTALLERS)) : $(TARGET_PATH)/% : \
+                 $(LIBNSS_TACPLUS)) \
+         $$(addprefix $(TARGET_PATH)/,$$($$*_DOCKERS)) \
+         $$(addprefix $(PYTHON_WHEELS_PATH)/,$(SONIC_CONFIG_ENGINE)) \
+-        $$(addprefix $(PYTHON_WHEELS_PATH)/,$(SONIC_PLATFORM_COMMON_PY2))
++        $$(addprefix $(PYTHON_WHEELS_PATH)/,$(SONIC_PLATFORM_COMMON_PY2)) \
++        $$(addprefix $(PYTHON_WHEELS_PATH)/,$(GNMISVR_PY2))
+ 	$(HEADER)
+ 	# Pass initramfs and linux kernel explicitly. They are used for all platforms
+ 	export initramfs_tools="$(DEBS_PATH)/$(INITRAMFS_TOOLS)"
+@@ -452,6 +453,8 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_INSTALLERS)) : $(TARGET_PATH)/% : \
+ 	export config_engine_wheel_path="$(addprefix $(PYTHON_WHEELS_PATH)/,$(SONIC_CONFIG_ENGINE))"
+ 	export swsssdk_py2_wheel_path="$(addprefix $(PYTHON_WHEELS_PATH)/,$(SWSSSDK_PY2))"
+ 	export platform_common_py2_wheel_path="$(addprefix $(PYTHON_WHEELS_PATH)/,$(SONIC_PLATFORM_COMMON_PY2))"
++	export gnmisvr_py2_wheel_path="$(addprefix $(PYTHON_WHEELS_PATH)/,$(GNMISVR_PY2))"
++
+ 
+ 	$(foreach docker, $($*_DOCKERS),\
+ 		export docker_image="$(docker)"
+@@ -472,6 +475,8 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_INSTALLERS)) : $(TARGET_PATH)/% : \
+ 
+ 	j2 -f env files/initramfs-tools/union-mount.j2 onie-image.conf > files/initramfs-tools/union-mount
+ 	j2 -f env files/initramfs-tools/arista-convertfs.j2 onie-image.conf > files/initramfs-tools/arista-convertfs
++	
++#	$(error XXX = $($*_DOCKERS))
+ 
+ 	$(if $($*_DOCKERS),
+ 		j2 files/build_templates/sonic_debian_extension.j2 > sonic_debian_extension.sh
+-- 
+2.7.4
+
